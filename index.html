@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 방패와 사라진 접속자</title>
+<style>
+  @import url('https://cdn.jsdelivr.net/npm/galmuri@latest/dist/galmuri.css');
+  
+  body {
+    margin: 0; padding: 0; background-color: #111; color: #fff;
+    font-family: 'Galmuri11', sans-serif; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; height: 100vh; overflow: hidden;
+  }
+
+  #game-wrapper {
+    position: relative; width: 640px; height: 480px; box-shadow: 0 0 20px rgba(0,0,0,1);
+    overflow: hidden;
+  }
+
+  #game-container {
+    position: absolute; width: 100%; height: 100%;
+    background-color: #2b2b2b; border: 4px solid #aaa; box-sizing: border-box;
+    image-rendering: pixelated;
+  }
+  
+  /* 화면 흔들림 효과 */
+  @keyframes shake {
+    0% { transform: translate(2px, 2px) rotate(0deg); }
+    10% { transform: translate(-2px, -2px) rotate(-1deg); }
+    20% { transform: translate(-4px, 0px) rotate(1deg); }
+    30% { transform: translate(4px, 2px) rotate(0deg); }
+    40% { transform: translate(2px, -2px) rotate(1deg); }
+    50% { transform: translate(-2px, 2px) rotate(-1deg); }
+    60% { transform: translate(-4px, 2px) rotate(0deg); }
+    70% { transform: translate(4px, 2px) rotate(-1deg); }
+    80% { transform: translate(-2px, -2px) rotate(1deg); }
+    90% { transform: translate(2px, 4px) rotate(0deg); }
+    100% { transform: translate(2px, -2px) rotate(-1deg); }
+  }
+  .shake-effect { animation: shake 0.4s; animation-iteration-count: 2; }
+
+  canvas { display: block; }
+
+  /* 페이드 오버레이 */
+  #fade-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background-color: black; opacity: 1; pointer-events: none;
+    transition: opacity 0.5s ease; z-index: 50;
+    display: flex; justify-content: center; align-items: center; text-align: center;
+  }
+  #fade-text { color: #fff; font-size: 20px; transition: opacity 0.3s ease; line-height: 1.5; }
+
+  /* 이의있음 연출 */
+  #objection-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background-color: rgba(200, 0, 0, 0.85); opacity: 0; pointer-events: none;
+    transition: opacity 0.1s ease; z-index: 60;
+    display: flex; justify-content: center; align-items: center;
+  }
+  #objection-text {
+    color: #fff; font-size: 60px; font-weight: bold; font-style: italic;
+    text-shadow: 4px 4px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;
+    transform: scale(0.5); transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .objection-active #objection-text { transform: scale(1.2); }
+
+  /* 대화창 */
+  #dialogue-box {
+    position: absolute; bottom: 0; left: 0; width: 100%; height: 140px;
+    background: linear-gradient(135deg, rgba(0, 30, 80, 0.95), rgba(0, 10, 30, 0.95));
+    border-top: 3px solid #fff; border-left: 3px solid #fff; border-right: 3px solid #fff;
+    border-radius: 8px 8px 0 0; padding: 20px; box-sizing: border-box;
+    display: none; z-index: 20;
+  }
+  #dialogue-box.trial-mode { background: linear-gradient(135deg, rgba(100, 0, 0, 0.95), rgba(40, 0, 0, 0.95)); }
+  #speaker-name { color: #ffd54f; font-size: 18px; margin-bottom: 10px; font-weight: bold; text-shadow: 2px 2px 0px #000; }
+  #dialogue-text { font-size: 16px; line-height: 1.6; text-shadow: 1px 1px 0px #000; }
+  #continue-indicator { position: absolute; bottom: 15px; right: 20px; font-size: 14px; color: #aaa; animation: blink 1s infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* 수사 수첩 (우측 상단 고정) */
+  #evidence-menu {
+    position: absolute; top: 10px; right: 10px; width: 230px;
+    background: rgba(0, 0, 0, 0.9); border: 2px solid #aaa; border-radius: 5px;
+    padding: 10px; z-index: 30; 
+  }
+  #evidence-menu.collapsed { width: 120px; padding: 5px 10px; }
+  #evidence-menu.collapsed #notebook-content { display: none; }
+  #toggle-btn {
+    text-align: center; background: #444; border: 1px solid #777; border-radius: 3px;
+    font-size: 12px; padding: 4px; cursor: pointer; color: #fff;
+  }
+  #toggle-btn:hover { background: #666; }
+  #notebook-content { margin-top: 10px; }
+  #evidence-menu h3 { margin: 0 0 10px 0; font-size: 16px; color: #4caf50; text-align: center; border-bottom: 1px dashed #fff; padding-bottom: 8px; }
+  
+  #evidence-list-container { max-height: 220px; overflow-y: auto; overflow-x: hidden; padding-right: 5px;}
+  #evidence-list-container::-webkit-scrollbar { width: 6px; }
+  #evidence-list-container::-webkit-scrollbar-track { background: #222; }
+  #evidence-list-container::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+  
+  .category-title { color: #90caf9; font-size: 13px; margin: 15px 0 5px 0; font-weight: bold; border-bottom: 1px solid #444; }
+  .evidence-item { font-size: 13px; line-height: 1.6; margin-left: 5px; cursor: pointer; color: #fff; transition: color 0.2s; margin-bottom: 3px;}
+  .evidence-item:hover { color: #ffeb3b; text-decoration: underline; background: rgba(255,255,255,0.1); }
+
+  /* 단서 모달 */
+  #evidence-modal {
+    position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    width: 320px; background: rgba(20, 20, 20, 0.95);
+    border: 3px solid #ffeb3b; border-radius: 8px; padding: 20px;
+    display: none; z-index: 40; box-shadow: 0 0 15px rgba(0,0,0,0.8);
+  }
+  #modal-title { color: #ffeb3b; font-size: 18px; margin-bottom: 5px; font-weight: bold; }
+  #modal-category { color: #90caf9; font-size: 12px; margin-bottom: 15px; }
+  #modal-desc { font-size: 14px; line-height: 1.6; color: #ddd; margin-bottom: 20px; }
+  .modal-buttons { display: flex; justify-content: center; gap: 10px; }
+  .btn {
+    text-align: center; background: #333; padding: 8px 15px; border-radius: 4px;
+    cursor: pointer; font-size: 14px; border: 1px solid #777; color: #fff; flex: 1;
+  }
+  .btn:hover { background: #555; }
+  #present-btn { background: #b71c1c; border-color: #f44336; display: none; font-weight: bold;}
+  #present-btn:hover { background: #d32f2f; }
+
+  #controls-help { margin-top: 20px; font-size: 14px; color: #888; text-align: center; line-height: 1.5; }
+  #map-name-ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 5px 10px; border: 1px solid #fff; font-size: 14px; color: #fff; z-index: 4; border-radius: 4px;}
+  
+  #audio-btn {
+    position: absolute; top: 10px; left: 10px; z-index: 100;
+    padding: 8px 12px; font-family: 'Galmuri11'; background: #d32f2f; color: #fff; border: 2px solid #fff;
+    border-radius: 5px; cursor: pointer; font-weight: bold; box-shadow: 2px 2px 0px #000;
+  }
+  #audio-btn:hover { background: #f44336; }
+</style>
+</head>
+<body>
+
+<button id="audio-btn" onclick="initAudio()">🔊 소리 켜기 (클릭)</button>
+
+<div id="game-wrapper">
+  <div id="game-container">
+    <canvas id="gameCanvas" width="632" height="472"></canvas>
+    <div id="map-name-ui" style="top: 50px;">본관 복도</div>
+    
+    <div id="evidence-menu" class="collapsed">
+      <div id="toggle-btn" onclick="toggleNotebook()">수첩 펴기 (C)</div>
+      <div id="notebook-content">
+        <h3>수사 수첩</h3>
+        <div id="evidence-list-container">
+          <div style="color: #666; font-size: 13px; text-align: center;">(단서를 찾아보자)</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="dialogue-box">
+      <div id="speaker-name">지널</div>
+      <div id="dialogue-text">...</div>
+      <div id="continue-indicator">▼ (Z 또는 Space)</div>
+    </div>
+    
+    <div id="evidence-modal">
+      <div id="modal-title">증거 이름</div>
+      <div id="modal-category">[카테고리]</div>
+      <div id="modal-desc">상세 설명</div>
+      <div class="modal-buttons">
+        <div id="present-btn" class="btn" onclick="presentEvidence(false)">이 증거를 제시!</div>
+        <div class="btn" onclick="presentEvidence(true)">제시 취소 / 닫기</div>
+      </div>
+    </div>
+
+    <div id="objection-overlay">
+      <div id="objection-text">이의 있음!</div>
+    </div>
+
+    <div id="fade-overlay"><div id="fade-text"></div></div>
+  </div>
+</div>
+
+<div id="controls-help">
+  [방향키]: 이동 | [Z] / [Space]: 조사·대화 진행<br>
+  [C]: 수첩 펴기/접기 | 대결 모드 중 수첩 단서 클릭 ➔ [증거 제시]
+</div>
+
+<script>
+// ==========================================
+// 🎵 웹 오디오 API 사운드 시스템
+// ==========================================
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
+let audioEnabled = false;
+
+function initAudio() {
+  if(!audioEnabled) {
+    audioCtx = new AudioContext();
+    audioEnabled = true;
+    document.getElementById('audio-btn').style.background = '#4caf50';
+    document.getElementById('audio-btn').innerText = '🔊 소리 켜짐';
+    playBGM();
+  }
+}
+
+function playBGM() {
+  if(!audioEnabled) return;
+  const playNote = (freq, time) => {
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = 'sine'; osc.frequency.value = freq;
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    gain.gain.setValueAtTime(0.02, audioCtx.currentTime + time);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + time + 0.4);
+    osc.start(audioCtx.currentTime + time); osc.stop(audioCtx.currentTime + time + 0.4);
+  };
+  setInterval(() => {
+    playNote(150, 0); playNote(200, 0.5); playNote(180, 1.0); playNote(220, 1.5);
+  }, 2000);
+}
+
+function playObjection() {
+  if(!audioEnabled) return;
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.5);
+  gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+}
+
+function playEvidenceSound() {
+  if(!audioEnabled) return;
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+  osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.1);
+  gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+}
+
+// ==========================================
+// 게임 로직 및 DB
+// ==========================================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const gameContainer = document.getElementById('game-container');
+const dialogueBox = document.getElementById('dialogue-box');
+const speakerName = document.getElementById('speaker-name');
+const dialogueText = document.getElementById('dialogue-text');
+const evidenceMenu = document.getElementById('evidence-menu');
+const evidenceListContainer = document.getElementById('evidence-list-container');
+const mapNameUI = document.getElementById('map-name-ui');
+const fadeOverlay = document.getElementById('fade-overlay');
+const fadeText = document.getElementById('fade-text');
+const objectionOverlay = document.getElementById('objection-overlay');
+const presentBtn = document.getElementById('present-btn');
+
+const evidenceDB = {
+  '협박 편지': { category: '연구실', desc: '연구 폐기를 요구하는 문서. 네트워크 프린터에서 원격 출력됐다.' },
+  '프린터 출력 이력': { category: '연구실', desc: '연구실의 프린터에서 협박 문서가 출력된 기록.' },
+  '잠금 해제 명령': { category: '연구실', desc: '명령 수신은 확인되지만 문 개방은 입증되지 않는다.' },
+  '문 열림 센서 기록': { category: '연구실', desc: '사건 시간대에 문이 열린 물리적 기록이 없다. 출입자는 없었다.' },
+  
+  'CCTV 시각 불일치': { category: '본관 복도', desc: 'CCTV와 서버 기록의 시각에 3분 차이가 있다. 알리바이의 허점.' },
+  
+  '토슈즈와 바닥 왁스': { category: '무용 연습실', desc: '하늘 선배가 연습실에서 연습했다는 흔적.' },
+  '연습실 출입 기록': { category: '무용 연습실', desc: '사건 시간대에 30분의 공백. 알리바이의 허점이다.' },
+  '강하늘의 논문 초안': { category: '무용 연습실', desc: '사건 당일 연습실을 비웠던 진짜 이유.' },
+  
+  '네트워크 구조': { category: '컴퓨터실', desc: '프린터와 도어록이 메인 서버망과 연결되어 원격 제어가 가능하다.' },
+  '점검 기록': { category: '컴퓨터실', desc: '오민석이 단순 점검을 위해 접속한 기록. 조작 기록과는 무관하다.' },
+  '설정 변경 로그': { category: '컴퓨터실', desc: '사건 시간대, 도진우의 계정으로 서버 설정이 변경된 로그.' },
+  
+  '외부 투자 계약': { category: '학과 회의실', desc: '연구 성과가 외부 투자와 밀접하게 연결되어 막대한 자금이 걸려있다.' },
+  '공식 발표 자료': { category: '학과 회의실', desc: '플라이아 교수의 발표 자료. 핵심 개발자인 진우의 이름이 누락됐다.' },
+  '초기 연구 노트': { category: '학과 회의실', desc: 'AI 방패의 원본 아이디어가 적힌 노트. 도진우가 분노한 범행 동기.' },
+  
+  '반복 자동화 작업': { category: '서버실', desc: '서버실에서 자동 실행된 작업. 사람이 없어도 현장에 있는 것처럼 속인다.' },
+  'AI 음성 기록': { category: '서버실', desc: '작업 시스템에서 생성된 가짜 음성 자료. 알리바이 트릭이다.' },
+  '인증 기록': { category: '서버실', desc: '도진우에게 등록된 물리적 보안 토큰이 설정 변경 시각에 인증됐다. 해킹이 아니라는 물증.' }
+};
+
+let gameState = 'PLAY';
+let currentMap = 'corridor'; 
+let currentDialogue = [];
+let dialogueIndex = 0;
+let collectedEvidences = [];
+let objects = [];
+let isNotebookCollapsed = true; 
+let currentSelectedEvidence = '';
+let isJinbumRevealed = false; 
+
+// 챕터별 순차 진행 관리
+let chapterProgress = {
+  chapter1Complete: false,
+  chapter2Complete: false,
+  chapter3Complete: false,
+  chapter4Complete: false,
+};
+
+let trial = { active: false, target: '', phase: 0, expectedEvidence: '', currentStatement: '' };
+
+const player = { x: 300, y: 350, width: 32, height: 40, speed: 2.45, facing: 'up' };
+const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+
+let oriCompanion = {
+  active: true, x: 300, y: 380, width: 24, height: 24,
+  render: function(ctx) {
+    if (!this.active) return;
+    let hover = Math.sin(Date.now() / 150) * 4;
+    ctx.fillStyle = '#ffca28'; ctx.fillRect(this.x, this.y + hover, 24, 24);
+    ctx.fillStyle = '#ff8f00'; ctx.fillRect(this.x + 14, this.y + 10 + hover, 12, 6);
+    ctx.fillStyle = '#212121'; ctx.fillRect(this.x + 10, this.y + 6 + hover, 4, 4);
+    ctx.fillStyle = '#03a9f4'; ctx.fillRect(this.x + 12, this.y - 4 + hover, 4, 6);
+    ctx.fillStyle = '#fff'; ctx.font = '10px "Galmuri11"'; ctx.fillText("오리", this.x + 2, this.y - 8 + hover);
+  },
+  update: function(px, py) {
+    if (!this.active) return;
+    let targetX = px - 35; let targetY = py - 15;
+    this.x += (targetX - this.x) * 0.08; this.y += (targetY - this.y) * 0.08;
+  },
+  interact: function() {
+    if (!this.active) return;
+    if(trial.active) {
+      startDialogue([{ speaker: '오리', text: "상대의 거짓말과 모순되는 확실한 [단서]를 수첩에서 골라 제시해! 모르면 취소 버튼을 누르자." }]);
+    } else {
+      startDialogue([
+        { speaker: '오리', text: "자, 지널. 복도를 통해 연구실, 연습실, 컴퓨터실, 회의실, 서버실을 순서대로 방문하며 단서를 모아봐." }
+      ]);
+    }
+  }
+};
+
+function hasEvidence(name) { return collectedEvidences.includes(name); }
+function addEvidence(name) {
+  if (!hasEvidence(name)) {
+    collectedEvidences.push(name); updateEvidenceUI();
+    playEvidenceSound(); 
+    fadeText.innerHTML = `[단서 획득]<br><br>${name}`;
+    fadeOverlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    fadeOverlay.style.opacity = '1';
+    setTimeout(() => { fadeOverlay.style.opacity = '0'; fadeText.innerHTML = ""; }, 1500);
+  }
+}
+
+function checkChapter1Complete() {
+  if (hasEvidence('협박 편지') && hasEvidence('문 열림 센서 기록') && hasEvidence('CCTV 시각 불일치') && !chapterProgress.chapter1Complete) {
+    chapterProgress.chapter1Complete = true;
+    startDialogue([
+      { speaker: '지널', text: "모든 정황이 일치해. 물리적 출입자가 없다는 게 증명됐어. 1단계 조사는 끝났어." },
+      { speaker: '오리', text: "이제 복도의 두 번째 문, '무용 연습실'로 하늘 선배를 만나러 가자!" }
+    ]);
+  }
+}
+
+function updateEvidenceUI() {
+  evidenceListContainer.innerHTML = '';
+  if (collectedEvidences.length === 0) return;
+  const grouped = {};
+  const roomOrder = ['연구실', '본관 복도', '무용 연습실', '컴퓨터실', '학과 회의실', '서버실'];
+
+  collectedEvidences.forEach(ev => {
+    const cat = evidenceDB[ev].category;
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(ev);
+  });
+
+  roomOrder.forEach(cat => {
+    if (grouped[cat]) {
+      const catTitle = document.createElement('div'); catTitle.className = 'category-title'; catTitle.textContent = `[${cat}]`;
+      evidenceListContainer.appendChild(catTitle);
+      grouped[cat].forEach(ev => {
+        const item = document.createElement('div'); item.className = 'evidence-item'; item.textContent = '■ ' + ev;
+        item.onclick = () => showEvidenceDetail(ev);
+        evidenceListContainer.appendChild(item);
+      });
+    }
+  });
+}
+
+function toggleNotebook() {
+  isNotebookCollapsed = !isNotebookCollapsed;
+  if (isNotebookCollapsed) { 
+    evidenceMenu.classList.add('collapsed'); 
+    document.getElementById('toggle-btn').textContent = '수첩 펴기 (C)'; 
+  } else { 
+    evidenceMenu.classList.remove('collapsed'); 
+    document.getElementById('toggle-btn').textContent = '수첩 접기 (C)'; 
+  }
+}
+
+function showEvidenceDetail(name) {
+  if (gameState === 'TRANSITION') return;
+  currentSelectedEvidence = name;
+  const data = evidenceDB[name];
+  document.getElementById('modal-title').textContent = name;
+  document.getElementById('modal-category').textContent = `획득 장소: [${data.category}]`;
+  document.getElementById('modal-desc').textContent = data.desc;
+  
+  if (trial.active) presentBtn.style.display = 'block';
+  else presentBtn.style.display = 'none';
+
+  document.getElementById('evidence-modal').style.display = 'block';
+  if(gameState === 'PLAY' || gameState === 'TRIAL') gameState = 'EVIDENCE';
+}
+
+function closeEvidenceDetail() {
+  document.getElementById('evidence-modal').style.display = 'none';
+  if(gameState === 'EVIDENCE') gameState = trial.active ? 'TRIAL' : 'PLAY';
+}
+
+function triggerObjection(callback) {
+  playObjection(); 
+  gameContainer.classList.add('shake-effect');
+  objectionOverlay.style.opacity = '1';
+  objectionOverlay.classList.add('objection-active');
+  
+  setTimeout(() => {
+    objectionOverlay.style.opacity = '0';
+    objectionOverlay.classList.remove('objection-active');
+    gameContainer.classList.remove('shake-effect');
+    if(callback) callback();
+  }, 1200);
+}
+
+function startTrial(targetName, statement, expected) {
+  trial.active = true; trial.target = targetName; trial.expectedEvidence = expected; trial.currentStatement = statement;
+  gameState = 'TRIAL'; dialogueBox.classList.add('trial-mode');
+  if(isNotebookCollapsed) toggleNotebook();
+  startDialogue([{ speaker: targetName, text: statement + "\n(모순을 깰 단서를 수첩에서 꺼내 [이 증거를 제시!] 버튼 클릭)" }]);
+}
+
+function endTrialMode() {
+  trial.active = false; gameState = 'PLAY'; dialogueBox.classList.remove('trial-mode');
+}
+
+function presentEvidence(isCanceled = false) {
+  closeEvidenceDetail();
+  
+  if (isCanceled && trial.active) {
+    endTrialMode();
+    startDialogue([{ speaker: '지널', text: "(아직 이 주장을 반박할 확실한 증거가 수첩에 없어. 조사를 더 해보자.)" }]);
+    return;
+  }
+  
+  if (!trial.active) return;
+
+  if (currentSelectedEvidence === trial.expectedEvidence) {
+    triggerObjection(() => {
+      endTrialMode();
+      if (trial.target === '강하늘') handleHanulSuccess();
+      else if (trial.target === '오민석') handleMinseokSuccess();
+      else if (trial.target === '한서윤') handleSeoyoonSuccess();
+      else if (trial.target === '플라이아 교수') handleFlyaSuccess();
+      else if (trial.target === '도진우' || trial.target === '도진우 (진범)') handleJinwooSuccess();
+    });
+  } else {
+    endTrialMode(); 
+    startDialogue([
+      { speaker: '지널', text: "이 증거를 보세요! [" + currentSelectedEvidence + "]입니다!" },
+      { speaker: trial.target, text: "...그게 지금 내 말과 무슨 상관인데? 억지 부리지 마." },
+      { speaker: '오리', text: "지널, 그 단서로는 모순을 입증할 수 없어. 제대로 된 증거를 골라!" }
+    ]);
+  }
+}
+
+// ==== 대결 승리 시나리오 ====
+function handleHanulSuccess() {
+  chapterProgress.chapter2Complete = true;
+  addEvidence('강하늘의 논문 초안');
+  startDialogue([
+    { speaker: '지널', text: "선배! 단말기 기록에는 30분의 공백이 남아 있어요. 연습실을 비우셨죠?" },
+    { speaker: '강하늘', text: "윽...!" },
+    { speaker: '강하늘', text: "...들켰네. 맞아, 내 논문 초안이 사라져서 찾으러 갔었어. 협박하러 간 게 아니야.\n이게 내 '논문 초안 사본'이야. 날 믿어줘." },
+    { speaker: '오리', text: "알리바이를 깼어! 이제 다음 방인 '컴퓨터실' 문이 열렸어." }
+  ]);
+}
+
+function handleMinseokSuccess() {
+  chapterProgress.chapter3Complete = true;
+  addEvidence('네트워크 구조');
+  startDialogue([
+    { speaker: '지널', text: "이 설정 변경 로그를 보세요! 도진우 선배의 계정으로 서버가 조작됐습니다." },
+    { speaker: '오민석', text: "크윽... 네 말이 맞아." },
+    { speaker: '오민석', text: "연구실 프린터와 도어록은 모두 이 메인 서버와 내부망으로 연결되어 있어. 누군가 작정하고 원격 제어한 게 분명해." },
+    { speaker: '오리', text: "네트워크 구조를 알아냈어. 다음은 '회의실'로 가서 동기를 파헤치자!" }
+  ]);
+}
+
+function handleSeoyoonSuccess() {
+  startDialogue([
+    { speaker: '지널', text: "이 외부 투자 계약서를 보세요. 이 연구가 폐기되면 수십억의 투자가 날아가게 되죠." },
+    { speaker: '한서윤', text: "앗...!" },
+    { speaker: '한서윤', text: "맞습니다. 저는 투자를 지키기 위해 상황을 주시하고 있었을 뿐, 제가 협박범은 아닙니다." }
+  ]);
+}
+
+function handleFlyaSuccess() {
+  chapterProgress.chapter4Complete = true;
+  startDialogue([
+    { speaker: '지널', text: "교수님, 이 초기 연구 노트를 보세요. 도진우 선배의 아이디어가 핵심이었습니다!" },
+    { speaker: '플라이아 교수', text: "아아...!" },
+    { speaker: '플라이아 교수', text: "투자 건 때문에 어쩔 수 없었네. 공식 발표 자료엔 진우의 이름이 누락됐지. 내 탐욕이 학생을 저렇게 만들었어." },
+    { speaker: '오리', text: "도진우 선배의 완벽한 범행 동기가 밝혀졌어! 드디어 마지막 '서버실' 문이 열렸어!" }
+  ]);
+}
+
+function handleJinwooSuccess() {
+  if (trial.phase === 0) {
+    trial.phase++;
+    startDialogue([
+      { speaker: '지널', text: "센서 기록에는 문이 열린 물리적 흔적이 전혀 없습니다. 아무도 침입하지 않았단 소리죠!" },
+      { speaker: '도진우', text: "큭... 그럼 책상 위에 놓인 협박 편지는 어떻게 설명할 건데? 누군가 들어와 놓고 간 확실한 증거잖아!" }
+    ], () => { startTrial('도진우', "누군가 직접 방 안에 들어와 편지를 놓고 갔다는 확실한 증거잖아!", '프린터 출력 이력'); });
+  } 
+  else if (trial.phase === 1) {
+    trial.phase++;
+    startDialogue([
+      { speaker: '지널', text: "편지는 밖에서 가져온 게 아니라 네트워크 프린터로 원격 출력된 겁니다!" },
+      { speaker: '도진우', text: "흥... 재밌군. 하지만 난 계속 서버실에 있었어. 자동화 작업 로그랑 음성 기록이 완벽한 알리바이를 증명해." }
+    ], () => { startTrial('도진우', "난 계속 서버실에 있었어. 자동화 작업 로그랑 음성 기록이 완벽한 알리바이를 증명해.", '반복 자동화 작업'); });
+  }
+  else if (trial.phase === 2) {
+    trial.phase++;
+    startDialogue([
+      { speaker: '지널', text: "그건 사람이 없어도 돌아가는 반복 자동화 스크립트일 뿐입니다. 가짜 알리바이죠!" },
+      { speaker: '도진우', text: "누군가 내 계정을 해킹했을 수도 있잖아. 내가 직접 설정했다는 물증이 있나?" }
+    ], () => { startTrial('도진우', "누군가 내 계정을 해킹했을 수도 있잖아. 내가 직접 설정했다는 물증이 있나?", '인증 기록'); });
+  }
+  else if (trial.phase === 3) {
+    trial.phase++;
+    startDialogue([
+      { speaker: '지널', text: "네트워크 설정이 변경된 시간에, 선배 본인의 '물리적 보안 토큰'이 인증되었습니다. 해킹이 아니란 소리죠!" },
+      { speaker: '도진우', text: "크윽...!" },
+      { speaker: '도진우', text: "하지만... 동기가 없잖아. 내가 대체 왜 내 연구를 망치는 협박 편지를 보냈겠어?" }
+    ], () => { startTrial('도진우', "난 이 연구에 애정이 있어. 내가 왜 교수님을 협박해야 하지?", '초기 연구 노트'); });
+  }
+  else if (trial.phase === 4) {
+    isJinbumRevealed = true; 
+    startDialogue([
+      { speaker: '지널', text: "교수님이 공식 발표에서 선배의 기여를 누락시켰기 때문이죠. 이 연구 노트가 선배의 억울함과 분노를 증명합니다." },
+      { speaker: '도진우 (진범)', text: "아아..." },
+      { speaker: '도진우 (진범)', text: "...완벽하다고 생각했는데. 그저 단 한 번이라도, 사람들이 내 억울함을 똑바로 봐주길 바랐을 뿐이야." },
+      { speaker: '지널', text: "선배의 기여를 뺏긴 건 안타깝습니다. 하지만 조작과 협박은 틀린 방식입니다. 당신의 패배입니다." }
+    ], () => {
+      fadeOverlay.style.backgroundColor = 'white';
+      fadeText.innerHTML = "<span style='color:red; font-size:40px; font-weight:bold;'>검거 완료</span>";
+      fadeOverlay.style.opacity = '1';
+      setTimeout(() => {
+        fadeOverlay.style.backgroundColor = 'black';
+        fadeText.innerHTML = "THE END<br><br>CASE 01: AI 방패와 사라진 접속자<br><br>끝까지 플레이해 주셔서 감사합니다.";
+      }, 3000);
+    });
+  }
+}
+
+function startDialogue(lines, callback = null) {
+  if (gameState !== 'TRIAL') gameState = 'DIALOGUE'; 
+  currentDialogue = lines; dialogueIndex = 0;
+  dialogueBox.callback = callback;
+  showNextDialogue();
+}
+function showNextDialogue() {
+  if (dialogueIndex < currentDialogue.length) {
+    dialogueBox.style.display = 'block';
+    speakerName.textContent = currentDialogue[dialogueIndex].speaker;
+    dialogueText.innerHTML = currentDialogue[dialogueIndex].text.replace(/\n/g, '<br>');
+    dialogueIndex++;
+  } else {
+    dialogueBox.style.display = 'none'; 
+    if(gameState !== 'TRIAL') gameState = 'PLAY';
+    if (dialogueBox.callback) { dialogueBox.callback(); dialogueBox.callback = null; }
+  }
+}
+
+// ==== 맵 이동 제어 (순차 진행 강제) ====
+function changeMapWithCheck(newMapId, spawnX, spawnY, facing='down') {
+  if (newMapId === 'practice' && !chapterProgress.chapter1Complete) {
+    startDialogue([{ speaker: '오리', text: "아직 연구실과 복도에서 모든 단서를 찾지 못했어. 1단계 조사를 끝내야 무용 연습실로 갈 수 있어." }]);
+    return;
+  }
+  if (newMapId === 'computer' && !chapterProgress.chapter2Complete) {
+    startDialogue([{ speaker: '오리', text: "아직 무용 연습실에서 하늘 선배의 거짓말을 밝혀내지 못했어." }]);
+    return;
+  }
+  if (newMapId === 'meeting' && !chapterProgress.chapter3Complete) {
+    startDialogue([{ speaker: '오리', text: "컴퓨터실에서 먼저 민석 선배를 조사해서 모순을 지적해야 해." }]);
+    return;
+  }
+  if (newMapId === 'server' && !chapterProgress.chapter4Complete) {
+    startDialogue([{ speaker: '오리', text: "회의실에서 교수님과 서윤씨의 사건 동기를 모두 파헤친 뒤에야 마지막 서버실로 갈 수 있어." }]);
+    return;
+  }
+  changeMap(newMapId, spawnX, spawnY, facing);
+}
+
+// ==== 맵 데이터 ====
+const maps = {
+  'corridor': {
+    name: '본관 3층 복도', bg: '#424242',
+    drawBg: function(ctx, canvas) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      for(let i=0; i<canvas.width; i+=40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+      for(let i=0; i<canvas.height; i+=40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+      ctx.fillStyle = 'rgba(100, 200, 255, 0.1)'; ctx.fillRect(450, 20, 150, 60); ctx.fillRect(450, 100, 150, 60);
+    },
+    initObjects: function() {
+      return [
+        {
+          id: 'door_lab', x: 50, y: 30, width: 80, height: 20, label: '연구실 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#6a6a6a'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMap('lab', 300, 400, 'up'); }
+        },
+        {
+          id: 'door_practice', x: 180, y: 30, width: 80, height: 20, label: '연습실 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#8d6e63'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMapWithCheck('practice', 300, 400, 'up'); }
+        },
+        {
+          id: 'door_computer', x: 310, y: 30, width: 80, height: 20, label: '컴퓨터실 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#546e7a'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMapWithCheck('computer', 300, 400, 'up'); }
+        },
+        {
+          id: 'door_meeting', x: 50, y: 150, width: 80, height: 20, label: '회의실 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#6d4c41'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMapWithCheck('meeting', 300, 400, 'up'); }
+        },
+        {
+          id: 'door_server', x: 50, y: 250, width: 80, height: 20, label: '서버실 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#b71c1c'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMapWithCheck('server', 300, 400, 'up'); }
+        },
+        {
+          id: 'cctv', x: 250, y: 150, width: 20, height: 30, label: '복도 CCTV', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#212121'; ctx.fillRect(this.x, this.y, this.width, this.height); ctx.fillStyle = '#ff0000'; ctx.fillRect(this.x+8, this.y+20, 4, 4); },
+          interact: function() {
+            if (!hasEvidence('CCTV 시각 불일치')) {
+              addEvidence('CCTV 시각 불일치');
+              startDialogue([{ speaker: '오리', text: "CCTV 화면의 시계와 서버 시각이 3분 차이가 나. 중요한 단서야." }], () => checkChapter1Complete());
+            } else startDialogue([{ speaker: '지널', text: "시각이 불일치하는 CCTV다. 알리바이 트릭의 핵심이 될 수 있다." }]);
+          }
+        }
+      ];
+    }
+  },
+  'lab': {
+    name: '연구실', bg: '#2b2b2b',
+    drawBg: function(ctx, canvas) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+      for(let i=0; i<canvas.width; i+=40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+      for(let i=0; i<canvas.height; i+=40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+    },
+    initObjects: function() {
+      return [
+        {
+          id: 'door_exit', x: 280, y: 450, width: 80, height: 20, label: '복도로 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#6a6a6a'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMap('corridor', 90, 60, 'down'); }
+        },
+        {
+          id: 'desk', x: 250, y: 150, width: 140, height: 70, label: '교수의 책상', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#3e2723'; ctx.fillRect(this.x, this.y, this.width, this.height); ctx.fillStyle = '#cfd8dc'; ctx.fillRect(this.x + 20, this.y + 15, 40, 30); ctx.fillStyle = '#ffffff'; ctx.fillRect(this.x + 90, this.y + 25, 18, 24); },
+          interact: function() {
+            if (!hasEvidence('협박 편지')) {
+              addEvidence('협박 편지'); addEvidence('프린터 출력 이력');
+              startDialogue([
+                { speaker: '지널', text: "이게 협박 편지인가?" },
+                { speaker: '오리', text: "옆에 있는 네트워크 프린터에서 원격으로 인쇄된 '협박 편지'네." },
+                { speaker: '지널', text: "그렇다면 범인이 직접 편지를 들고 들어온 게 아닐 수도 있겠네." }
+              ], () => checkChapter1Complete());
+            } else startDialogue([{ speaker: '지널', text: "원격 출력된 협박 편지가 놓여 있다." }]);
+          }
+        },
+        {
+          id: 'door_inner', x: 250, y: 30, width: 140, height: 30, label: '안쪽 문', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#4a4a4a'; ctx.fillRect(this.x, this.y, this.width, this.height); ctx.fillStyle = '#ff3333'; ctx.fillRect(this.x+120, this.y+10, 6, 6); },
+          interact: function() {
+            if (!hasEvidence('문 열림 센서 기록')) {
+              addEvidence('잠금 해제 명령'); addEvidence('문 열림 센서 기록');
+              startDialogue([
+                { speaker: '지널', text: "안쪽 문도 확인해 보자." },
+                { speaker: '오리', text: "원격 '잠금 해제 명령'은 있었지만 '문 열림 센서'상으론 물리적으로 열리지 않았어." },
+                { speaker: '지널', text: "잠금은 풀렸는데 문은 열리지 않았다? 애초에 아무도 안 들어왔지!" }
+              ], () => checkChapter1Complete());
+            } else startDialogue([{ speaker: '지널', text: "열리지 않은 문이다. 물리적 침입자는 없었다." }]);
+          }
+        }
+      ];
+    }
+  },
+  'practice': {
+    name: '무용 연습실', bg: '#d7ccc8',
+    drawBg: function(ctx, canvas) {
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+      for(let i=0; i<canvas.height; i+=30) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+    },
+    initObjects: function() {
+      return [
+        {
+          id: 'door_exit', x: 280, y: 450, width: 80, height: 20, label: '복도로 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#8d6e63'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMap('corridor', 220, 60, 'down'); }
+        },
+        {
+          id: 'terminal', x: 20, y: 150, width: 30, height: 40, label: '출입 기록기', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#424242'; ctx.fillRect(this.x, this.y, this.width, this.height); ctx.fillStyle = '#00e676'; ctx.fillRect(this.x + 8, this.y + 10, 14, 14); },
+          interact: function() {
+            if (!hasEvidence('연습실 출입 기록')) { addEvidence('연습실 출입 기록'); startDialogue([{ speaker: '오리', text: "기록을 보니 사건 시간대에 30분 정도 공백이 있어. 알리바이를 깰 핵심 증거야." }]); }
+            else startDialogue([{ speaker: '지널', text: "30분의 공백이 선명하게 남아있는 단말기다." }]);
+          }
+        },
+        {
+          id: 'floor_wax', x: 200, y: 250, width: 30, height: 30, label: '바닥의 흔적', solid: false,
+          render: function(ctx) { ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(this.x + 15, this.y + 15, 10, 0, Math.PI*2); ctx.fill(); },
+          interact: function() {
+            if (!hasEvidence('토슈즈와 바닥 왁스')) { addEvidence('토슈즈와 바닥 왁스'); startDialogue([{ speaker: '오리', text: "토슈즈 왁스야. 하늘 선배가 연습실에 있었던 것 자체는 사실이네." }]); }
+            else startDialogue([{ speaker: '지널', text: "하얗게 묻은 왁스다." }]);
+          }
+        },
+        {
+          id: 'haneul', x: 350, y: 200, width: 32, height: 40, label: '강하늘 (선배)', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#f48fb1'; ctx.fillRect(this.x + 4, this.y + 16, 24, 24); ctx.fillStyle = '#ffe0bd'; ctx.fillRect(this.x + 6, this.y, 20, 16); ctx.fillStyle = '#795548'; ctx.fillRect(this.x + 2, this.y - 4, 28, 12); },
+          interact: function() {
+            if (chapterProgress.chapter2Complete) {
+              startDialogue([{ speaker: '강하늘', text: "나는 내 논문을 지키고 싶었을 뿐이야. 다른 방을 조사해봐." }]);
+            } else {
+              startDialogue([
+                { speaker: '강하늘', text: "지널? 아직도 여기 있었어?" },
+                { speaker: '지널', text: "긴급 공지 봤어? 연구실에서 협박 편지가 발견됐어. 오늘 밤 어디에 있었어?" },
+                { speaker: '강하늘', text: "난 그날 밤 단 한 순간도 연습실을 비우지 않았어. 계속 연습했으니까." }
+              ], () => {
+                startTrial('강하늘', "난 그날 밤 1초도 쉬지 않고 연습실에서 연습만 했다고!", '연습실 출입 기록');
+              });
+            }
+          }
+        }
+      ];
+    }
+  },
+  'computer': {
+    name: '컴퓨터실', bg: '#1c2833',
+    drawBg: function(ctx, canvas) {
+      ctx.strokeStyle = 'rgba(0, 200, 255, 0.1)';
+      for(let i=0; i<canvas.width; i+=20) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+      for(let i=0; i<canvas.height; i+=20) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+    },
+    initObjects: function() {
+      return [
+        {
+          id: 'door_exit', x: 280, y: 450, width: 80, height: 20, label: '복도로 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#546e7a'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMap('corridor', 350, 60, 'down'); }
+        },
+        {
+          id: 'server', x: 100, y: 150, width: 120, height: 80, label: '메인 서버', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#212f3d'; ctx.fillRect(this.x, this.y, this.width, this.height); ctx.fillStyle = Math.floor(Date.now()/300)%2===0 ? '#00ff00' : '#005500'; ctx.fillRect(this.x+20, this.y+20, 10, 10); },
+          interact: function() {
+            if (!hasEvidence('설정 변경 로그')) {
+              addEvidence('설정 변경 로그');
+              startDialogue([
+                { speaker: '지널', text: "서버 설정 변경 로그를 확인해 볼까? ...어?" },
+                { speaker: '오리', text: "'도진우' 선배의 연구 계정으로 네트워크 설정이 변경된 로그가 남아있어! 오민석과 대화해보자." }
+              ]);
+            } else startDialogue([{ speaker: '지널', text: "도진우 계정으로 조작된 확실한 흔적이다." }]);
+          }
+        },
+        {
+          id: 'terminal_min', x: 50, y: 50, width: 40, height: 60, label: '단말기', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#424242'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() {
+            if (!hasEvidence('점검 기록')) { addEvidence('점검 기록'); startDialogue([{ speaker: '지널', text: "오민석 선배가 시스템에 단순 접속한 점검 기록이다." }]); }
+            else startDialogue([{ speaker: '지널', text: "단순 점검 기록이다." }]);
+          }
+        },
+        {
+          id: 'minseok', x: 400, y: 200, width: 32, height: 40, label: '오민석', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#00bcd4'; ctx.fillRect(this.x+4, this.y+16, 24, 24); ctx.fillStyle = '#ffe0bd'; ctx.fillRect(this.x+6, this.y, 20, 16); ctx.fillStyle = '#212121'; ctx.fillRect(this.x+2, this.y-4, 28, 12); },
+          interact: function() {
+            if (chapterProgress.chapter3Complete) {
+              startDialogue([{ speaker: '오민석', text: "진우 선배 계정이 쓰였다고 해서 본인이 했다는 확증은 아직 없어. 회의실을 확인해 봐." }]);
+            } else {
+              startDialogue([
+                { speaker: '오민석', text: "지널아, 여긴 통제 구역인데 웬일이야?" },
+                { speaker: '지널', text: "네트워크를 조사하러 왔어요." },
+                { speaker: '오민석', text: "서버 설정이 바뀐 건 알아. 하지만 내가 조작했다는 증거는 없잖아." }
+              ], () => {
+                startTrial('오민석', "내가 서버 설정을 조작했다는 증거라도 있어? 누군가 다른 계정을 썼겠지!", '설정 변경 로그');
+              });
+            }
+          }
+        }
+      ];
+    }
+  },
+  'meeting': {
+    name: '학과 회의실', bg: '#4e342e',
+    drawBg: function(ctx, canvas) {
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+      for(let i=0; i<canvas.width; i+=10) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+    },
+    initObjects: function() {
+      return [
+        {
+          id: 'door_exit', x: 280, y: 450, width: 80, height: 20, label: '복도로 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#3e2723'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMap('corridor', 90, 230, 'down'); }
+        },
+        {
+          id: 'seoyoon', x: 150, y: 250, width: 32, height: 40, label: '한서윤', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#9c27b0'; ctx.fillRect(this.x+4, this.y+16, 24, 24); ctx.fillStyle = '#ffe0bd'; ctx.fillRect(this.x+6, this.y, 20, 16); ctx.fillStyle = '#3e2723'; ctx.fillRect(this.x+2, this.y-4, 28, 16); },
+          interact: function() {
+            if(defeated.seoyoon) {
+              startDialogue([{ speaker: '한서윤', text: "동기에 대해서라면 플라이아 교수님께 직접 물어보세요." }]);
+            } else {
+              startDialogue([
+                { speaker: '한서윤', text: "사건 조사 중이라고 들었습니다." },
+                { speaker: '지널', text: "연구 폐기와 관련해 동기가 있으시죠?" }
+              ], () => {
+                startTrial('한서윤', "저는 그저 파견된 직원입니다. 제가 이 연구가 폐기되는 걸 걱정할 동기가 없죠.", '외부 투자 계약');
+              });
+            }
+          }
+        },
+        {
+          id: 'prof_flya', x: 350, y: 250, width: 32, height: 40, label: '플라이아 교수', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#fff'; ctx.fillRect(this.x+4, this.y+16, 24, 24); ctx.fillStyle = '#ffe0bd'; ctx.fillRect(this.x+6, this.y, 20, 16); ctx.fillStyle = '#9e9e9e'; ctx.fillRect(this.x+4, this.y-4, 24, 8); },
+          interact: function() {
+            if(chapterProgress.chapter4Complete) {
+              startDialogue([{ speaker: '플라이아 교수', text: "책임은 내가 져야겠지. 미안하네." }]);
+            } else {
+              startDialogue([
+                { speaker: '플라이아 교수', text: "학생이 직접 사건을 조사하겠다고?" },
+                { speaker: '지널', text: "교수님, 최근에 연구 때문에 도진우 선배와 다툰 적 있으십니까?" },
+                { speaker: '플라이아 교수', text: "진우는 능력이 좋은 학생이야." }
+              ], () => {
+                startTrial('플라이아 교수', "그가 내게 불만을 품고 연구를 폐기하라고 협박할 리 없어!", '초기 연구 노트');
+              });
+            }
+          }
+        },
+        {
+          id: 'documents', x: 50, y: 50, width: 60, height: 40, label: '문서 보관함', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#fff'; ctx.fillRect(this.x, this.y, this.width, this.height); ctx.fillStyle = '#aaa'; ctx.fillRect(this.x+10, this.y+10, 40, 5); ctx.fillRect(this.x+10, this.y+20, 40, 5); },
+          interact: function() {
+            if (!hasEvidence('외부 투자 계약') || !hasEvidence('초기 연구 노트') || !hasEvidence('공식 발표 자료')) {
+              addEvidence('외부 투자 계약'); addEvidence('초기 연구 노트'); addEvidence('공식 발표 자료');
+              startDialogue([
+                { speaker: '지널', text: "문서 보관함 안에 여러 서류들이 흩어져 있다." },
+                { speaker: '오리', text: "이건 외부 투자 계약서와 공식 발표 자료, 그리고 도진우 선배의 '초기 연구 노트'야!" },
+                { speaker: '지널', text: "이 단서들이라면 이곳에 있는 사람들의 동기를 파헤칠 수 있겠어." }
+              ]);
+            } else startDialogue([{ speaker: '지널', text: "사건의 동기가 담긴 중요한 서류들을 모두 확보했다." }]);
+          }
+        }
+      ];
+    }
+  },
+  'server': {
+    name: '서버실', bg: '#111',
+    drawBg: function(ctx, canvas) {
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)'; ctx.lineWidth = 2;
+      for(let i=0; i<canvas.width; i+=40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i+20, canvas.height); ctx.stroke(); }
+    },
+    initObjects: function() {
+      return [
+        {
+          id: 'door_exit', x: 280, y: 450, width: 80, height: 20, label: '복도로 🚪', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#b71c1c'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() { changeMap('corridor', 90, 330, 'down'); }
+        },
+        {
+          id: 'ai_console', x: 100, y: 100, width: 100, height: 80, label: 'AI 자동화 콘솔', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#b71c1c'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() {
+            if (!hasEvidence('반복 자동화 작업')) {
+              addEvidence('반복 자동화 작업'); addEvidence('AI 음성 기록');
+              startDialogue([
+                { speaker: '오리', text: "도진우의 음성 기록을 확보했습니다... 잠깐, 이 음성 간격이 정확히 일치해!" },
+                { speaker: '지널', text: "사람이 없어도 일정한 간격으로 돌아가며 가짜 음성을 남기는 자동화 스크립트야." }
+              ]);
+            } else startDialogue([{ speaker: '지널', text: "자동화 스크립트가 돌아가고 있다." }]);
+          }
+        },
+        {
+          id: 'auth_terminal', x: 450, y: 100, width: 80, height: 80, label: '보안 단말기', solid: true,
+          render: function(ctx) { ctx.fillStyle = '#424242'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+          interact: function() {
+            if (!hasEvidence('인증 기록')) {
+              addEvidence('인증 기록');
+              startDialogue([
+                { speaker: '지널', text: "설정이 변경된 시각과 일치하는 인증 기록을 찾았어." },
+                { speaker: '오리', text: "인증에는 도진우에게 등록된 물리적 보안 토큰이 사용됐어. 이건 해킹될 수 없는 완벽한 물증이지!" }
+              ]);
+            } else startDialogue([{ speaker: '지널', text: "도진우의 물리적 인증 기록이다." }]);
+          }
+        },
+        {
+          id: 'jinwoo', x: 300, y: 200, width: 32, height: 40, label: '', solid: true,
+          render: function(ctx) { 
+            this.label = isJinbumRevealed ? '도진우 (진범)' : '도진우 (선배)';
+            ctx.fillStyle = '#4caf50'; ctx.fillRect(this.x+4, this.y+16, 24, 24); ctx.fillStyle = '#ffe0bd'; ctx.fillRect(this.x+6, this.y, 20, 16); ctx.fillStyle = '#5d4037'; ctx.fillRect(this.x+2, this.y-4, 28, 12); 
+          },
+          interact: function() {
+            if (isJinbumRevealed) {
+              startDialogue([{ speaker: '도진우 (진범)', text: "...더 이상 할 말은 없다. 네가 이겼어." }]);
+              return;
+            }
+            startDialogue([
+              { speaker: '도진우', text: "여기까지 왔군, 지널. 더 이상 도망칠 곳은 없어." },
+              { speaker: '지널', text: "선배, 사건 당일 알리바이에 대해 묻고 싶습니다." },
+              { speaker: '도진우', text: "내 주장은 간단해. 난 그 시간 내내 서버실에서 연구 중이었어." }
+            ], () => {
+              startTrial('도진우', "잠금 해제 명령이 있으니 누군가 침입했겠지. 안 그래?", '문 열림 센서 기록');
+            });
+          }
+        }
+      ];
+    }
+  }
+};
+
+function changeMap(newMapId, spawnX, spawnY, facing='down') {
+  gameState = 'TRANSITION'; fadeOverlay.style.backgroundColor = 'black'; fadeOverlay.style.opacity = '1';
+  setTimeout(() => {
+    currentMap = newMapId; objects = maps[newMapId].initObjects(); mapNameUI.textContent = maps[newMapId].name;
+    player.x = spawnX; player.y = spawnY; player.facing = facing;
+    oriCompanion.x = player.x - 20; oriCompanion.y = player.y;
+    fadeOverlay.style.opacity = '0'; gameState = 'PLAY';
+  }, 500);
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyC') toggleNotebook();
+  
+  if (gameState === 'PLAY') {
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
+    if (e.code === 'KeyZ' || e.code === 'Space') checkInteraction();
+  } else if (gameState === 'DIALOGUE' || gameState === 'TRIAL') {
+    if (e.code === 'KeyZ' || e.code === 'Space') {
+      if (gameState === 'TRIAL' && dialogueBox.style.display === 'none') {
+        startDialogue([{ speaker: trial.target, text: trial.currentStatement + "\n(모순을 깰 단서를 수첩에서 꺼내 [이 증거를 제시!] 버튼 클릭)" }]);
+      } else showNextDialogue();
+    }
+  } else if (gameState === 'EVIDENCE') {
+    if (e.code === 'KeyZ' || e.code === 'Space' || e.code === 'Escape') closeEvidenceDetail();
+  }
+});
+
+window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.code)) keys[e.code] = false; });
+
+function checkInteraction() {
+  const range = 25; let cx = player.x + player.width / 2; let cy = player.y + player.height / 2;
+  if (player.facing === 'up') cy -= range; else if (player.facing === 'down') cy += range; else if (player.facing === 'left') cx -= range; else if (player.facing === 'right') cx += range;
+
+  let interactables = [...objects];
+  if (oriCompanion.active) interactables.push({ x: oriCompanion.x, y: oriCompanion.y, width: oriCompanion.width, height: oriCompanion.height, interact: oriCompanion.interact.bind(oriCompanion) });
+
+  for (let obj of interactables) {
+    if (cx >= obj.x - 10 && cx <= obj.x + obj.width + 10 && cy >= obj.y - 10 && cy <= obj.y + obj.height + 10) {
+      obj.interact(); break;
+    }
+  }
+}
+
+function drawPlayer(ctx) {
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(player.x+4, player.y+36, 24, 6); 
+  ctx.fillStyle = '#1e88e5'; ctx.fillRect(player.x+4, player.y+16, 24, 24); 
+  ctx.fillStyle = '#ffe0bd'; ctx.fillRect(player.x+6, player.y, 20, 16); 
+  ctx.fillStyle = '#424242'; ctx.fillRect(player.x+4, player.y-4, 24, 8); 
+  ctx.fillStyle = '#000'; 
+  if (player.facing === 'down') { ctx.fillRect(player.x+10, player.y+6, 3, 3); ctx.fillRect(player.x+19, player.y+6, 3, 3); } 
+  else if (player.facing === 'left') { ctx.fillRect(player.x+6, player.y+6, 3, 3); } 
+  else if (player.facing === 'right') { ctx.fillRect(player.x+23, player.y+6, 3, 3); }
+}
+
+function isColliding(px, py, pw, ph, obj) {
+  if (obj.solid === false) return false;
+  return px < obj.x + obj.width && px + pw > obj.x && py < obj.y + obj.height && py + ph > obj.y;
+}
+
+function update() {
+  if (gameState === 'PLAY') {
+    let dx = 0; let dy = 0;
+    if (keys.ArrowUp) { dy -= player.speed; player.facing = 'up'; }
+    if (keys.ArrowDown) { dy += player.speed; player.facing = 'down'; }
+    if (keys.ArrowLeft) { dx -= player.speed; player.facing = 'left'; }
+    if (keys.ArrowRight) { dx += player.speed; player.facing = 'right'; }
+
+    let newX = player.x + dx; let collisionX = false;
+    for (let obj of objects) { if (isColliding(newX, player.y, player.width, player.height, obj)) { collisionX = true; break; } }
+    if (!collisionX) player.x = newX;
+
+    let newY = player.y + dy; let collisionY = false;
+    for (let obj of objects) { if (isColliding(player.x, newY, player.width, player.height, obj)) { collisionY = true; break; } }
+    if (!collisionY) player.y = newY;
+
+    player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+    player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
+    
+    oriCompanion.update(player.x, player.y);
+  }
+}
+
+function drawBgStyle(ctx) {
+  ctx.lineWidth = 1;
+  if(currentMap === 'corridor') {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    for(let i=0; i<canvas.width; i+=40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+    for(let i=0; i<canvas.height; i+=40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+    ctx.fillStyle = 'rgba(100, 200, 255, 0.1)'; ctx.fillRect(450, 20, 150, 60); ctx.fillRect(450, 100, 150, 60);
+  } else if(currentMap === 'lab') {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    for(let i=0; i<canvas.width; i+=40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+    for(let i=0; i<canvas.height; i+=40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+  } else if(currentMap === 'practice') {
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+    for(let i=0; i<canvas.height; i+=30) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+  } else if(currentMap === 'computer') {
+    ctx.strokeStyle = 'rgba(0, 200, 255, 0.1)';
+    for(let i=0; i<canvas.width; i+=20) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+    for(let i=0; i<canvas.height; i+=20) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+  } else if(currentMap === 'meeting') {
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+    for(let i=0; i<canvas.width; i+=10) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+  } else if(currentMap === 'server') {
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)'; ctx.lineWidth = 2;
+    for(let i=0; i<canvas.width; i+=40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i+20, canvas.height); ctx.stroke(); }
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBgStyle(ctx);
+
+  objects.forEach(obj => {
+    obj.render(ctx); ctx.fillStyle = '#fff'; ctx.font = '11px "Galmuri11"'; ctx.fillText(obj.label, obj.x, obj.y - 8);
+  });
+
+  drawPlayer(ctx);
+  oriCompanion.render(ctx);
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+
+window.onload = () => {
+  changeMap('corridor', 300, 400, 'up');
+  
+  fadeOverlay.style.backgroundColor = 'black';
+  fadeText.innerHTML = "「플라이아 교수 연구실에서 협박성 문서가 발견되었습니다.<br>관계자는 접근하지 말고 조사에 협조해 주십시오.」";
+  setTimeout(() => {
+    fadeOverlay.style.opacity = '0';
+    fadeText.innerHTML = "";
+    startDialogue([
+      { speaker: '시스템', text: "방향키: 이동 | Z/Space: 조사 및 대화 | C: 수첩 조작\n[순차 맵] 문을 통해 각 방을 순서대로 조사해 주세요." },
+      { speaker: '지널', text: "밤 아홉 시. 긴급 공지가 울렸어. 모두가 무언가를 숨기고 있는 것 같아." },
+      { speaker: '오리', text: "난 네 AI 단말기 오리야. 복도를 통해 각 방을 순서대로 조사하고, 엇갈리는 진술을 단서로 반박하자!" }
+    ]);
+  }, 3500);
+  loop();
+};
+</script>
+</body>
+</html>
